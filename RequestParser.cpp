@@ -24,6 +24,19 @@ PostRequest PostRequest::parse(std::string request)
 	post.message = postMatch[2];
 	post.valid = 1;
 
+	// As outlined in the Message Board Protocol:
+	// Both the topicId and the message have a maximum length of 140 characters.
+	if (post.topicId.size() > 140)
+	{
+		// TopicID length must be capped at 140 characters in length.
+		post.topicId.erase(140, post.topicId.npos);
+	}
+	if (post.message.size() > 140)
+	{
+		// Message length must be capped at 140 characters in length.
+		post.message.erase(140, post.message.npos);
+	}
+
 	return post;
 }
 

@@ -5,8 +5,6 @@
 #include <iostream>
 // For String verification with the Protocol Verifier.
 #include <string>
-// For REGEX
-#include <regex>
 
 #undef UNICODE
 
@@ -28,7 +26,6 @@
 #define PORT_BUFFER_LEN 10
 #define DEFAULT_BUFLEN 65536
 
-
 /* Constructor to initialise server.
    Initialises port.
 */
@@ -38,19 +35,9 @@ TCPServer::TCPServer(unsigned short int port)
 	char portString[PORT_BUFFER_LEN];
 	int iResult;
 
-	// Instantiate all Request classes from RequestParser.h.
-	PostRequest postParser;
-	ReadRequest readParser;
-	CountRequest countParser;
-	ListRequest listParser;
-	ExitRequest exitParser;
+	RequestHandler requestHandler;
 
 	this->port = port;
-	//this->postParser = postParser;
-	//this->readParser = readParser;
-	//this->countParser = countParser;
-	//this->listParser = listParser;
-	//this->exitParser = exitParser;
 
 	snprintf(portString, PORT_BUFFER_LEN - 1, "%d", port);
 	this->portString = portString;
@@ -152,145 +139,6 @@ ReceivedSocketData TCPServer::accept()
 }
 
 /*
-@brief The handle to deal with POST requests.
-@param &ret - Socket data object -> Request data sent from the TCPclient.
-*/
-void TCPServer::postMessageHandler(ReceivedSocketData& ret)
-{
-	postParser = postParser.parse(ret.request);
-	if (postParser.valid)
-	{
-		// POST request is valid.
-
-		if (messageBoard.find(postParser.getTopicId()) != messageBoard.end())
-		{
-			// TopicID (Key in the Hashmap) has been found - Not returned the end of the data structure.
-			// Note: After researching push_back vs emplace_back -> emplace_back was found to be faster by ~7.62%.
-			messageBoard.find(postParser.getTopicId())->second.emplace_back(postParser.getMessage());
-
-			// Reply with a postID (non-negatie number)
-			// Return the size of the vector-1 to match 0-based indexing.
-			ret.reply = std::to_string(messageBoard.find(postParser.getTopicId())->second.size() - 1);
-		}
-		else // TODO: FIX -> Errors here
-		{
-			// TopicID does not exist. Create the topic. Associated message has postID 0.
-
-			// Initialise a vector of string to insert the message.
-			std::vector<std::string> postMessageVector(1, postParser.getMessage());
-
-			// Insert the topicID & instantiated string vector.
-			messageBoard.insert({ postParser.getTopicId(), postMessageVector });
-
-			// Topic does not exist, it is created and the message becomes its first post.
-			// 0 is returned, as outlined in the standard.
-			ret.reply = "0";
-		}
-	}
-}
-
-/*
-@brief The handle to deal with LIST requests.
-@param &ret - Socket data object -> Request data sent from the TCPclient.
-*/
-void TCPServer::listMessageHandler(ReceivedSocketData& ret)
-{
-	listParser = listParser.parse(ret.request);
-
-	if (listParser.valid)
-	{
-		// LIST request is valid.
-
-		std::string topicListings;
-		const std::string hashDivider("#");
-
-		for (std::map<std::string, std::vector<std::string>>::iterator i = messageBoard.begin(); i != messageBoard.end(); i++)
-		{
-			// Ensure all topicIDs are separated by the "#" character as outlined in the protocol.html.
-			// ret.reply = topicListings.append(i->first).append(hashDivider);
-			topicListings.append(i->first).append(hashDivider);
-		}
-
-		// Remove the trailing # character.
-		if (!topicListings.empty())
-		{
-			topicListings.pop_back();
-		}
-		ret.reply = topicListings;
-	}
-}
-
-/*
-@brief The handle to deal with COUNT requests.
-@param &ret - Socket data object -> Request data sent from the TCPclient.
-*/
-void TCPServer::countMessageHandler(ReceivedSocketData& ret)
-{
-	countParser = countParser.parse(ret.request);
-
-	if (countParser.valid)
-	{
-		// COUNT request is valid.
-
-		if (messageBoard.find(countParser.getTopicId()) != messageBoard.end())
-		{
-			// TopicID (Key in the Hashmap) has been found - Not returned the end of the data structure.
-			// Parse the int to string.
-			ret.reply = std::to_string(messageBoard.find(countParser.getTopicId())->second.size());
-		}
-		else
-		{
-			// Topic does not exist - Return 0.
-			ret.reply = "0";
-		}
-	}
-}
-
-/*
-@brief The handle to deal with READ requests.
-@param &ret - Socket data object -> Request data sent from the TCPclient.
-*/
-void TCPServer::readMessageHandler(ReceivedSocketData& ret)
-{
-	readParser = readParser.parse(ret.request);
-
-	if (readParser.valid)
-	{
-		// READ request is valid.
-
-		auto bbb = readParser.getPostId();
-		if (messageBoard.find(readParser.getTopicId()) != messageBoard.end() && messageBoard.size() > 0 && messageBoard.find(readParser.getTopicId())->second.size()-1 >= readParser.getPostId())
-		{
-			// TopicID (Key in the Hashmap) has been found - Not returned the end of the data structure.
-			// MessageBoard is not empty (size must be greater than 0).
-			// Message index exists -> The size-1 of the std::vector (matching a Vector that is 0-based index) is >= postID.
-			ret.reply = messageBoard.find(readParser.getTopicId())->second.at(readParser.getPostId());
-		}
-		else
-		{
-			// Respond with a blank line.
-			ret.reply = "";
-		}
-	}
-}
-
-/*
-@brief The handle to deal with EXIT|exit requests.
-@param &ret - Socket data object -> Request data sent from the TCPclient.
-*/
-void TCPServer::terminateRequestHandler(ReceivedSocketData& ret)
-{
-	exitParser = exitParser.parse(ret.request);
-
-	if (exitParser.valid)
-	{
-		// EXIT request is valid.
-
-		ret.reply = "TERMINATING";
-	}
-}
-
-/*
 @brief Method to receive data on the server, from client.
 The protocol verifier tests need to be made to ensure all pass. (18/18)
 @param ret - Socket data object -> Reply & Request.
@@ -352,32 +200,33 @@ void TCPServer::receiveData(ReceivedSocketData &ret, bool blocking)
 	/*
 		At this point, RecievedSocktData object has succesfully obtained a request.
 		The server must allow for checks to be made so that it may conform to the Protocol Verifier checks. (18/18)
-		Checks are made in the order as outlined in the ``Message Board Protocol`` html web-page.
+		Checks are made in the order as outlined in the ``Message Board Protocol`` html web-page. (apart from EXIT)
 	*/
-	if (ret.request.rfind("POST", 0) == 0)
+	if (ret.request.find("EXIT" || "exit") != std::string::npos)
+	{
+		// Check if the request is not an exit first.
+		// Terminates the server.
+		requestHandler.terminateRequestHandler(ret);
+	}
+	else if (ret.request.rfind("POST") != std::string::npos)
 	{
 		// Post a message.
-		postMessageHandler(ret);
+		requestHandler.postMessageHandler(ret);
 	}
-	else if (ret.request.rfind("LIST", 0) == 0)
+	else if (ret.request.rfind("LIST") != std::string::npos)
 	{
 		// List all topicIDs.
-		listMessageHandler(ret);
+		requestHandler.listMessageHandler(ret);
 	}
-	else if (ret.request.rfind("COUNT", 0) == 0)
+	else if (ret.request.rfind("COUNT") != std::string::npos)
 	{
 		// Counts the number of posts on a given topic, identified by topicID.
-		countMessageHandler(ret);
+		requestHandler.countMessageHandler(ret);
 	}
-	else if (ret.request.rfind("READ", 0) == 0)
+	else if (ret.request.rfind("READ") != std::string::npos)
 	{
 		// Looks up a topic (identified by topicID) and returns the request message (identified by postID).
-		readMessageHandler(ret);
-	}
-	else if (ret.request.rfind("EXIT", 0) == 0 || ret.request.rfind("exit", 0) == 0)
-	{
-		// Terminates the server.
-		terminateRequestHandler(ret);
+		requestHandler.readMessageHandler(ret);
 	}
 }
 
@@ -431,7 +280,6 @@ void TCPServer::CloseListenSocket()
 	// No longer need server socket.
 	closesocket(ListenSocket);
 }
-
 
 TCPServer::~TCPServer()
 {

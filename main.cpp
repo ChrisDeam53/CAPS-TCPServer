@@ -20,6 +20,7 @@ int main()
 
 	ReceivedSocketData receivedData;
 
+	// Assign a vector of threads for the server to use.
 	std::vector<std::thread> serverThreads;
 
 	std::cout << "Starting server. Send \"exit\" (without quotes) to terminate." << std::endl;
@@ -42,8 +43,6 @@ int main()
 	return 0;
 }
 
-// NOTE: std::cout slows down the server -> Remove later down the line.
-
 void serverThreadFunction(TCPServer* server, ReceivedSocketData && data)
 {
 	unsigned int socketIndex = (unsigned int) data.ClientSocket;
@@ -51,25 +50,15 @@ void serverThreadFunction(TCPServer* server, ReceivedSocketData && data)
 	do {
 		server->receiveData(data, 0);
 
-		if (data.request != "" && data.request != "exit" && data.request != "EXIT")
+		// if (data.request != "" && data.request != "exit" && data.request != "EXIT")
+		if (data.request != "")
 		{
-			// std::cout << "[" << socketIndex << "] Bytes received: " << data.request.size() << std::endl;
-			// std::cout << "[" << socketIndex << "] Data received: " << data.request << std::endl;
-
-			// data.reply = data.request;
-			// std::reverse(data.reply.begin(), data.reply.end());
-
-			std::cout << "DATA REPLY: " << data.reply << std::endl;
 			server->sendReply(data);
 		}
-		else if (data.request == "exit" || data.request == "EXIT")
+		/*else if (data.request == "exit" || data.request == "EXIT")
 		{
-			// std::cout << "[" << socketIndex << "] Data received: " << data.request << std::endl;
-			std::cout << "[" << socketIndex << "] Exiting... Bye bye!" << std::endl;
-
-			// data.reply = data.request;
 			server->sendReply(data);
-		}
+		}*/
 	} while (data.request != "exit" && data.request != "EXIT" && !terminateServer);
 
 	if (!terminateServer && (data.request == "exit" || data.request == "EXIT"))
